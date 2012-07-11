@@ -13,6 +13,7 @@
   </compiler>
   <applications>
     <application path="FlexSwarm.as"/>
+    <application path="SwarmTest.mxml"/>
   </applications>
   <modules/>
   <buildCSSFiles/>

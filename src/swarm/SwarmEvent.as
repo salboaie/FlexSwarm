@@ -27,39 +27,44 @@ package swarm
 		/************************************************************************************************************************************
 		 *  Vars
 		 ***********************************************************************************************************************************/
-		protected var _swormingData:Object;
-		protected var _swormingName:String;
+		protected var _swarmingData:Object;		
 		
 		/************************************************************************************************************************************
 		 *  Functions
 		 ***********************************************************************************************************************************/
 		
-		public function SwarmEvent(type:String, swormingName:String, swormingData:Object, bubbles:Boolean=false, cancelable:Boolean=false)
+		public function SwarmEvent(swarmingData:Object, bubbles:Boolean=false, cancelable:Boolean=false)
 		{
 			super(type, bubbles, cancelable);
-			_swormingData = swormingData;
-			_swormingName = swormingName;
+			_swarmingData = swarmingData;			
 		}
 		
 		//___________________________________________________________________________________________________________________________________
 		
-		public function get swormingData():Object
+		public function get swarmingData():Object
 		{
-			return _swormingData;
+			return _swarmingData;
+		}
+		
+			
+		//___________________________________________________________________________________________________________________________________
+		
+		public function get swarmingName():String
+		{
+			return _swarmingData.swarmingName;
 		}
 		
 		//___________________________________________________________________________________________________________________________________
-
-		public function get swormingName():String
-		{
-			return _swormingName;
-		}
 		
+		public function get swarmingPhase():String
+		{
+			return _swarmingData.currentPhase;
+		}
 		//___________________________________________________________________________________________________________________________________
 
 		override public function clone():Event
 		{
-			return new SwarmEvent(type,_swormingName,_swormingData,bubbles,cancelable);
+			return new SwarmEvent(_swarmingData,bubbles,cancelable);
 		}
 		
 		//___________________________________________________________________________________________________________________________________

@@ -24,6 +24,9 @@ package swarm
 	import flash.net.Socket;
 	import flash.utils.Dictionary;
 	
+	import mx.controls.Alert;
+	import mx.utils.UIDUtil;
+	
 	public class SwarmClient extends EventDispatcher
 	{
 		/************************************************************************************************************************************
@@ -32,26 +35,48 @@ package swarm
 		/************************************************************************************************************************************
 		 *  Variables
 		 ***********************************************************************************************************************************/
-		protected var _jsonUtil:SwarmJsonUtil;
-		protected var _callBacks:Dictionary;
-		protected var _socket:Socket;
-		protected var _host:String;
-		protected var _port:uint;
+		protected var _jsonUtil		: SwarmJsonUtil;
+		protected var _callBacks	: Dictionary;
+		protected var _socket		: Socket;
+		protected var _host			: String;
+		protected var _port			: uint;
+		
+		protected var _userId		: String;
+		protected var _pass  		: String;
+		protected var _loginCtor  	: String;
+		protected var _loginOk  	: Boolean;
+		
+		protected var _sessionId	:String;			
+		
+		protected var _securityErrFunc 	: Function = null;
+		protected var _onErrFunc 		: Function = null;
+		protected var pendingCmds		: Array;
 		
 		/************************************************************************************************************************************
 		 *  Functions
 		 ***********************************************************************************************************************************/
 		
-		public function SwarmClient( host:String, port:uint )
+		public function SwarmClient( host:String, port:uint, userId:String, 
+									 secretPass:String, 
+									 securityErrorFunction:Function = null,
+									 errorFunction:Function = null,
+									 loginCtor:String = "start")
 		{
 			super(null);
+			_loginOk 	= false;
+			pendingCmds = new Array();
+			_onErrFunc 	= errorFunction;
+			_securityErrFunc = securityErrorFunction;
+			_host 		= host;
+			_port 		= port;
 			
-			_host = host;
-			_port = port;
+			_callBacks 	= new Dictionary();
+			_jsonUtil  	= new SwarmJsonUtil(socket_onDataReady);
 			
-			_callBacks = new Dictionary();
-			_jsonUtil  = new SwarmJsonUtil(socket_onDataReady);
-			
+			_userId 	= userId;
+			_pass		= secretPass;
+			_loginCtor 	= loginCtor;
+			_sessionId = UIDUtil.createUID();
 			createSocket();
 		}
 		
@@ -64,20 +89,37 @@ package swarm
 			_socket.addEventListener( ProgressEvent.SOCKET_DATA,         socket_onStreamData);
 			_socket.addEventListener( IOErrorEvent.IO_ERROR,             socket_onError);
 			_socket.addEventListener( SecurityErrorEvent.SECURITY_ERROR, socket_onSecurityError);
+			_socket.connect(_host,_port);
 		}
 		
 		//___________________________________________________________________________________________________________________________________
 		
 		protected function socket_onSecurityError(event:SecurityErrorEvent):void
 		{
+			if(_securityErrFunc != null)
+			{
+				_securityErrFunc(event);
+			}
+			else 
+			{
+				Alert.show("Connection to server failed. Check crosdomain.xml configuration.");	
+			}
 		}
 		
 		//___________________________________________________________________________________________________________________________________
 		
 		protected function socket_onError(event:IOErrorEvent):void
 		{
+			if(_onErrFunc != null)
+			{
+				_onErrFunc(event);
+			}
+			else 
+			{
+				Alert.show("Connection to server failed");	
+			}
+			
 		}
-		
 		//___________________________________________________________________________________________________________________________________
 		
 		protected function socket_onStreamData(event:ProgressEvent):void
@@ -90,16 +132,56 @@ package swarm
 		
 		protected function socket_onConnect(event:Event):void
 		{
+			//start login 
+			var cmd:* = {
+				sessionId        : _sessionId,
+				swarmingName     : "login.js",
+				command          : "start",
+				ctor		 	 : _loginCtor,
+				commandArguments : [_sessionId, _userId, _pass]
+			};
+			writeObject(cmd);
 		}		
 		
 		//___________________________________________________________________________________________________________________________________
 		
 		protected function socket_onDataReady( data:Object ):void
 		{
-			var event:SwarmEvent = new SwarmEvent( SwarmEvent.ON_DATA, data.swarmingName, data );
-				dispatchEvent( event );
-			
+			var event:SwarmEvent = new SwarmEvent( data );
+			dispatchEvent( event );			
 			callSwarmingCallBack( data.swarmingName, data );
+			
+			if(_loginOk != true) {			
+				_loginOk = true;
+				//if was not allready closed,it should be a successful login
+				for (var i:int = 0; i < pendingCmds.length; i++) {
+					writeObject(pendingCmds[i]);					
+				}				
+				pendingCmds = null;
+			}
+		}
+		
+		//___________________________________________________________________________________________________________________________________
+		public function startSwarm (swarmName:String, ctroName:String):void 
+		{
+			var args:Array = Array.prototype.slice.call(arguments,2);
+			
+			var cmd:* = 
+				{
+					sessionId        : _sessionId,
+					swarmingName     : swarmName,
+					command          : "start",
+					ctor             : ctroName,
+					commandArguments : args
+				};
+			if(_loginOk == true) 
+			{
+				writeObject(cmd);
+			}
+			else 
+			{
+				pendingCmds.push(cmd);
+			}
 		}
 		
 		//___________________________________________________________________________________________________________________________________
@@ -120,13 +202,7 @@ package swarm
 		{
 			_callBacks[swarmingName] = callback;
 		}
-		
-		//___________________________________________________________________________________________________________________________________
-		
-		public function connect():void
-		{
-			_socket.connect(_host,_port);
-		}
+			
 		
 		//___________________________________________________________________________________________________________________________________
 		
