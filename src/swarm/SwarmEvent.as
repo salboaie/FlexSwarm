@@ -60,6 +60,7 @@ package swarm
 		{
 			return _swarmingData.currentPhase;
 		}
+		
 		//___________________________________________________________________________________________________________________________________
 
 		override public function clone():Event

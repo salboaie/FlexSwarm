@@ -17,7 +17,6 @@ package swarm
 {
 	import flash.events.Event;
 	import flash.events.EventDispatcher;
-	import flash.events.IEventDispatcher;
 	import flash.events.IOErrorEvent;
 	import flash.events.ProgressEvent;
 	import flash.events.SecurityErrorEvent;
@@ -48,9 +47,9 @@ package swarm
 		
 		protected var _sessionId	:String;			
 		
-		protected var _securityErrFunc 	: Function = null;
-		protected var _onErrFunc 		: Function = null;
-		protected var pendingCmds		: Array;
+		protected var _securityErrorHandler	: Function = null;
+		protected var _onErrorHandler 		: Function = null;
+		protected var _pendingCmds			: Array;
 		
 		/************************************************************************************************************************************
 		 *  Functions
@@ -63,12 +62,13 @@ package swarm
 									 loginCtor:String = "start")
 		{
 			super(null);
-			_loginOk 	= false;
-			pendingCmds = new Array();
-			_onErrFunc 	= errorFunction;
-			_securityErrFunc = securityErrorFunction;
-			_host 		= host;
-			_port 		= port;
+			
+			_host 			= host;
+			_port 			= port;
+			_loginOk 		= false;
+			_pendingCmds 	= new Array();
+			_onErrorHandler 	  = errorFunction;
+			_securityErrorHandler = securityErrorFunction;
 			
 			_callBacks 	= new Dictionary();
 			_jsonUtil  	= new SwarmJsonUtil(socket_onDataReady);
@@ -78,6 +78,13 @@ package swarm
 			_loginCtor 	= loginCtor;
 			_sessionId = UIDUtil.createUID();
 			createSocket();
+		}
+		
+		//___________________________________________________________________________________________________________________________________
+		
+		public function get sessionId():String
+		{
+			return _sessionId;
 		}
 		
 		//___________________________________________________________________________________________________________________________________
@@ -96,9 +103,9 @@ package swarm
 		
 		protected function socket_onSecurityError(event:SecurityErrorEvent):void
 		{
-			if(_securityErrFunc != null)
+			if(_securityErrorHandler != null)
 			{
-				_securityErrFunc(event);
+				_securityErrorHandler(event);
 			}
 			else 
 			{
@@ -110,9 +117,9 @@ package swarm
 		
 		protected function socket_onError(event:IOErrorEvent):void
 		{
-			if(_onErrFunc != null)
+			if(_onErrorHandler != null)
 			{
-				_onErrFunc(event);
+				_onErrorHandler(event);
 			}
 			else 
 			{
@@ -140,6 +147,7 @@ package swarm
 				ctor		 	 : _loginCtor,
 				commandArguments : [_sessionId, _userId, _pass]
 			};
+			
 			writeObject(cmd);
 		}		
 		
@@ -151,21 +159,22 @@ package swarm
 			dispatchEvent( event );			
 			callSwarmingCallBack( data.swarmingName, data );
 			
-			if(_loginOk != true) {			
+			if(_loginOk != true)
+			{			
 				_loginOk = true;
 				//if was not allready closed,it should be a successful login
-				for (var i:int = 0; i < pendingCmds.length; i++) {
-					writeObject(pendingCmds[i]);					
+				for (var i:int = 0; i < _pendingCmds.length; i++) 
+				{
+					writeObject(_pendingCmds[i]);					
 				}				
-				pendingCmds = null;
+				_pendingCmds = null;
 			}
 		}
 		
 		//___________________________________________________________________________________________________________________________________
-		public function startSwarm (swarmName:String, ctroName:String):void 
+		
+		public function startSwarm (swarmName:String, ctroName:String, ... args):Object 
 		{
-			var args:Array = Array.prototype.slice.call(arguments,2);
-			
 			var cmd:* = 
 				{
 					sessionId        : _sessionId,
@@ -174,14 +183,17 @@ package swarm
 					ctor             : ctroName,
 					commandArguments : args
 				};
+			
 			if(_loginOk == true) 
 			{
 				writeObject(cmd);
 			}
 			else 
 			{
-				pendingCmds.push(cmd);
+				_pendingCmds.push(cmd);
 			}
+			
+			return cmd;
 		}
 		
 		//___________________________________________________________________________________________________________________________________
