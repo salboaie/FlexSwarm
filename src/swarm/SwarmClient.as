@@ -24,13 +24,20 @@ package swarm
 	import flash.utils.Dictionary;
 	
 	import mx.controls.Alert;
-	import mx.utils.UIDUtil;
 	
 	public class SwarmClient extends EventDispatcher
 	{
 		/************************************************************************************************************************************
 		 *  Const
 		 ***********************************************************************************************************************************/
+		public static var LOGIN_SWORMING_NAME:String = 'login.js';
+		public static var LOGIN_CTOR_NAME:String 	 = 'start';
+		public static var IDENTITY_COMMAND:String 	 = 'identity';
+		
+		public static const WAITING_FOR_IDENTITY:uint = 0;
+		public static const WAITING_FOR_LOGIN:uint 	  = 1;
+		public static const WAITING_FOR_DATA:uint 	  = 2;
+		
 		/************************************************************************************************************************************
 		 *  Variables
 		 ***********************************************************************************************************************************/
@@ -46,6 +53,7 @@ package swarm
 		protected var _loginOk  	: Boolean;
 		
 		protected var _sessionId	:String;			
+		protected var _clientState  :uint;			
 		
 		protected var _securityErrorHandler	: Function = null;
 		protected var _onErrorHandler 		: Function = null;
@@ -55,8 +63,8 @@ package swarm
 		 *  Functions
 		 ***********************************************************************************************************************************/
 		
-		public function SwarmClient( host:String, port:uint, userId:String, 
-									 secretPass:String, 
+		public function SwarmClient( host:String, port:uint, 
+									 userId:String, secretPass:String, 
 									 securityErrorFunction:Function = null,
 									 errorFunction:Function = null,
 									 loginCtor:String = "start")
@@ -67,16 +75,18 @@ package swarm
 			_port 			= port;
 			_loginOk 		= false;
 			_pendingCmds 	= new Array();
+			
 			_onErrorHandler 	  = errorFunction;
 			_securityErrorHandler = securityErrorFunction;
 			
 			_callBacks 	= new Dictionary();
-			_jsonUtil  	= new SwarmJsonUtil(socket_onDataReady);
+			_jsonUtil  	= new SwarmJsonUtil(waitingForIdentity);
 			
 			_userId 	= userId;
 			_pass		= secretPass;
 			_loginCtor 	= loginCtor;
-			_sessionId = UIDUtil.createUID();
+			_sessionId  = null;
+			
 			createSocket();
 		}
 		
@@ -97,6 +107,20 @@ package swarm
 			_socket.addEventListener( IOErrorEvent.IO_ERROR,             socket_onError);
 			_socket.addEventListener( SecurityErrorEvent.SECURITY_ERROR, socket_onSecurityError);
 			_socket.connect(_host,_port);
+		}
+		
+		//___________________________________________________________________________________________________________________________________
+		
+		protected function socket_onConnect(event:Event):void
+		{}	
+		
+		//___________________________________________________________________________________________________________________________________
+		
+		protected function socket_onStreamData(event:ProgressEvent):void
+		{
+			var streamMessage:String =_socket.readUTFBytes(_socket.bytesAvailable); 
+			
+			_jsonUtil.parseStream( _socket.readUTFBytes(_socket.bytesAvailable) );
 		}
 		
 		//___________________________________________________________________________________________________________________________________
@@ -127,64 +151,88 @@ package swarm
 			}
 			
 		}
+		
 		//___________________________________________________________________________________________________________________________________
 		
-		protected function socket_onStreamData(event:ProgressEvent):void
+		protected function waitingForIdentity( data:Object ):void
 		{
-			var streamMessage:String =_socket.readUTFBytes(_socket.bytesAvailable); 
-			_jsonUtil.parseStream( streamMessage );
+ 			if ( _clientState == WAITING_FOR_IDENTITY && data.command == IDENTITY_COMMAND ) 
+			{
+				_clientState	   = WAITING_FOR_LOGIN;
+				_jsonUtil.callBack = waitingForLogin;
+				_sessionId		   = data.sessionId;				
+				
+				var cmd:Object = 
+					{
+					swarmingName     : LOGIN_SWORMING_NAME,
+					command          : LOGIN_CTOR_NAME,
+					ctor		 	 : _loginCtor,
+					commandArguments : [_sessionId, _userId, _pass]
+					};
+				
+				writeObject(cmd);
+			}
 		}
 		
 		//___________________________________________________________________________________________________________________________________
 		
-		protected function socket_onConnect(event:Event):void
+		protected function waitingForLogin( data:Object ):void
 		{
-			//start login 
-			var cmd:* = {
-				sessionId        : _sessionId,
-				swarmingName     : "login.js",
-				command          : "start",
-				ctor		 	 : _loginCtor,
-				commandArguments : [_sessionId, _userId, _pass]
-			};
+			var i:int;
+			var command:Object;
 			
-			writeObject(cmd);
-		}		
+			if( _clientState == WAITING_FOR_LOGIN )
+			{	
+				_loginOk = data.isOk;
+				
+				if ( _loginOk )
+				{
+					_clientState 	   = WAITING_FOR_DATA;
+					_jsonUtil.callBack = socket_onDataReady;
+					_loginOk 		   = true;
+					
+					for (i = 0; i < _pendingCmds.length; i++) 
+					{
+						command = _pendingCmds[i];
+						command.sessionId = _sessionId;
+						writeObject(command);
+					}	
+					
+					_pendingCmds = null;
+				}
+				else
+				{
+					Alert.show("Login failed !","Login failed : authorisationToken:["+data.authorisationToken+"] userId:["+data.userId+"]");
+				}
+			}
+		}
 		
 		//___________________________________________________________________________________________________________________________________
 		
 		protected function socket_onDataReady( data:Object ):void
 		{
-			var event:SwarmEvent = new SwarmEvent( data );
-			dispatchEvent( event );			
-			callSwarmingCallBack( data.swarmingName, data );
-			
-			if(_loginOk != true)
-			{			
-				_loginOk = true;
-				//if was not allready closed,it should be a successful login
-				for (var i:int = 0; i < _pendingCmds.length; i++) 
-				{
-					writeObject(_pendingCmds[i]);					
-				}				
-				_pendingCmds = null;
+			if ( _clientState == WAITING_FOR_DATA )
+			{
+				dispatchEvent( new SwarmEvent(data) );			
+				callSwarmingCallBack( data.swarmingName, data );
 			}
+						
 		}
 		
 		//___________________________________________________________________________________________________________________________________
 		
 		public function startSwarm (swarmName:String, ctroName:String, ... args):Object 
 		{
-			var cmd:* = 
+			var cmd:Object = 
 				{
 					sessionId        : _sessionId,
 					swarmingName     : swarmName,
-					command          : "start",
+					command          : LOGIN_CTOR_NAME,
 					ctor             : ctroName,
 					commandArguments : args
 				};
 			
-			if(_loginOk == true) 
+			if( _loginOk == true ) 
 			{
 				writeObject(cmd);
 			}
@@ -214,7 +262,6 @@ package swarm
 		{
 			_callBacks[swarmingName] = callback;
 		}
-			
 		
 		//___________________________________________________________________________________________________________________________________
 		
