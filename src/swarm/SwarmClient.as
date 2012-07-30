@@ -31,7 +31,7 @@ package swarm
 		 *  Const
 		 ***********************************************************************************************************************************/
 		public static var LOGIN_SWORMING_NAME:String = 'login.js';
-		public static var LOGIN_CTOR_NAME:String 	 = 'start';
+		public static var LOGIN_CTOR_NAME:String 	 = 'testCtor';
 		public static var IDENTITY_COMMAND:String 	 = 'identity';
 		
 		public static const WAITING_FOR_IDENTITY:uint = 0;
@@ -54,23 +54,28 @@ package swarm
 		
 		protected var _sessionId	:String;			
 		protected var _clientState  :uint;			
-		
+
 		protected var _securityErrorHandler	: Function = null;
 		protected var _onErrorHandler 		: Function = null;
 		protected var _pendingCmds			: Array;
+		
+		protected var _socketDown:Boolean;
+		protected var _tenantId:String;
 		
 		/************************************************************************************************************************************
 		 *  Functions
 		 ***********************************************************************************************************************************/
 		
 		public function SwarmClient( host:String, port:uint, 
-									 userId:String, secretPass:String, 
+									 userId:String, secretPass:String,
+									 tenantId:String,
 									 securityErrorFunction:Function = null,
 									 errorFunction:Function = null,
 									 loginCtor:String = "start")
 		{
 			super(null);
 			
+			_tenantId       = tenantId;
 			_host 			= host;
 			_port 			= port;
 			_loginOk 		= false;
@@ -118,7 +123,11 @@ package swarm
 		
 		protected function socket_onStreamData(event:ProgressEvent):void
 		{
-			var streamMessage:String =_socket.readUTFBytes(_socket.bytesAvailable); 
+			if ( _socketDown )
+			{
+				Alert.show("Socket is down !","Error");
+				return;
+			}
 			
 			_jsonUtil.parseStream( _socket.readUTFBytes(_socket.bytesAvailable) );
 		}
@@ -127,6 +136,8 @@ package swarm
 		
 		protected function socket_onSecurityError(event:SecurityErrorEvent):void
 		{
+			_socketDown = true;
+			
 			if(_securityErrorHandler != null)
 			{
 				_securityErrorHandler(event);
@@ -141,6 +152,8 @@ package swarm
 		
 		protected function socket_onError(event:IOErrorEvent):void
 		{
+			_socketDown = true;
+			
 			if(_onErrorHandler != null)
 			{
 				_onErrorHandler(event);
@@ -165,8 +178,9 @@ package swarm
 				var cmd:Object = 
 					{
 					swarmingName     : LOGIN_SWORMING_NAME,
-					command          : LOGIN_CTOR_NAME,
-					ctor		 	 : _loginCtor,
+					command          : 'start',
+					ctor		 	 : 'testCtor',
+					tenantId         : _tenantId,
 					commandArguments : [_sessionId, _userId, _pass]
 					};
 				
@@ -216,7 +230,6 @@ package swarm
 				dispatchEvent( new SwarmEvent(data) );			
 				callSwarmingCallBack( data.swarmingName, data );
 			}
-						
 		}
 		
 		//___________________________________________________________________________________________________________________________________
@@ -227,7 +240,8 @@ package swarm
 				{
 					sessionId        : _sessionId,
 					swarmingName     : swarmName,
-					command          : LOGIN_CTOR_NAME,
+					tenantId         : _tenantId,
+					command          : "start",
 					ctor             : ctroName,
 					commandArguments : args
 				};
@@ -267,10 +281,23 @@ package swarm
 		
 		public function writeObject( value:Object ):void
 		{
+			if ( _socketDown )
+			{
+				Alert.show("Socket is down !","Error");
+				return;
+			}
+			
 			if ( _socket )
 			{
 				_jsonUtil.writeObject( _socket, value );
 			}
+		}
+		
+		//___________________________________________________________________________________________________________________________________
+		
+		public function get writeble():Boolean
+		{
+			return !_socketDown;
 		}
 		
 		//___________________________________________________________________________________________________________________________________
