@@ -31,7 +31,7 @@ package swarm
 		 *  Const
 		 ***********************************************************************************************************************************/
 		public static var LOGIN_SWORMING_NAME:String = 'login.js';
-		public static var LOGIN_CTOR_NAME:String 	 = 'testCtor';
+		public static var LOGIN_CTOR_NAME:String 	 = 'authenticate';//'testCtor';
 		public static var IDENTITY_COMMAND:String 	 = 'identity';
 		
 		public static const WAITING_FOR_IDENTITY:uint = 0;
@@ -48,7 +48,7 @@ package swarm
 		protected var _port			: uint;
 		
 		protected var _userId		: String;
-		protected var _pass  		: String;
+		protected var _authToken  	: String;
 		protected var _loginCtor  	: String;
 		protected var _loginOk  	: Boolean;
 		
@@ -67,11 +67,11 @@ package swarm
 		 ***********************************************************************************************************************************/
 		
 		public function SwarmClient( host:String, port:uint, 
-									 userId:String, secretPass:String,
+									 userId:String, authToken:String,
 									 tenantId:String,
 									 securityErrorFunction:Function = null,
 									 errorFunction:Function = null,
-									 loginCtor:String = "start")
+									 loginCtor:String = "authenticate")
 		{
 			super(null);
 			
@@ -88,7 +88,7 @@ package swarm
 			_jsonUtil  	= new SwarmJsonUtil(waitingForIdentity);
 			
 			_userId 	= userId;
-			_pass		= secretPass;
+			_authToken	= authToken;
 			_loginCtor 	= loginCtor;
 			_sessionId  = null;
 			
@@ -169,20 +169,23 @@ package swarm
 		
 		protected function waitingForIdentity( data:Object ):void
 		{
- 			if ( _clientState == WAITING_FOR_IDENTITY && data.command == IDENTITY_COMMAND ) 
+ 			if ( _clientState == WAITING_FOR_IDENTITY && data.meta && data.meta.command == IDENTITY_COMMAND )
 			{
 				_clientState	   = WAITING_FOR_LOGIN;
 				_jsonUtil.callBack = waitingForLogin;
-				_sessionId		   = data.sessionId;				
+				_sessionId		   = data.meta.sessionId;
 				
-				var cmd:Object = 
-					{
-					swarmingName     : LOGIN_SWORMING_NAME,
-					command          : 'start',
-					ctor		 	 : 'testCtor',
-					tenantId         : _tenantId,
-					commandArguments : [_sessionId, _userId, _pass]
-					};
+				var cmd:Object =
+                {
+					meta: {
+                        swarmingName     : LOGIN_SWORMING_NAME,
+                        command          : 'start',
+                        ctor		 	 : _loginCtor,
+                        tenantId         : _tenantId,
+                        commandArguments : LOGIN_CTOR_NAME != _loginCtor ? [_sessionId, _userId, _authToken] : [_sessionId, _authToken]
+                    }
+
+				};
 				
 				writeObject(cmd);
 			}
@@ -201,6 +204,7 @@ package swarm
 				
 				if ( _loginOk )
 				{
+                    _sessionId		   = data.meta.sessionId;
 					_clientState 	   = WAITING_FOR_DATA;
 					_jsonUtil.callBack = socket_onDataReady;
 					_loginOk 		   = true;
@@ -208,7 +212,7 @@ package swarm
 					for (i = 0; i < _pendingCmds.length; i++) 
 					{
 						command = _pendingCmds[i];
-						command.sessionId = _sessionId;
+						command.meta.sessionId = _sessionId;
 						writeObject(command);
 					}	
 					
@@ -238,12 +242,14 @@ package swarm
 		{
 			var cmd:Object = 
 				{
-					sessionId        : _sessionId,
-					swarmingName     : swarmName,
-					tenantId         : _tenantId,
-					command          : "start",
-					ctor             : ctroName,
-					commandArguments : args
+					meta:{
+                        sessionId        : _sessionId,
+                        swarmingName     : swarmName,
+                        tenantId         : _tenantId,
+                        command          : "start",
+                        ctor             : ctroName,
+                        commandArguments : args
+                    }
 				};
 			
 			if( _loginOk == true ) 
