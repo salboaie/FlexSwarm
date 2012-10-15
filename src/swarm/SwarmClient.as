@@ -182,7 +182,7 @@ package swarm
                         command          : 'start',
                         ctor		 	 : _loginCtor,
                         tenantId         : _tenantId,
-                        commandArguments : LOGIN_CTOR_NAME != _loginCtor ? [_sessionId, _userId, _authToken] : [_sessionId, _authToken]
+                        commandArguments : [_sessionId, _userId, _authToken]
                     }
 
 				};
@@ -231,8 +231,11 @@ package swarm
 		{
 			if ( _clientState == WAITING_FOR_DATA )
 			{
+                if( data && data.meta && data.meta.changeSessionId == true) {
+                    _sessionId = data.meta.sessionId;
+                }
 				dispatchEvent( new SwarmEvent(data) );			
-				callSwarmingCallBack( data.swarmingName, data );
+				callSwarmingCallBack( data.meta.swarmingName, data );
 			}
 		}
 		
