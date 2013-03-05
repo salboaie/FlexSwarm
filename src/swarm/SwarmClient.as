@@ -31,7 +31,7 @@ package swarm
 		 *  Const
 		 ***********************************************************************************************************************************/
 		public static var LOGIN_SWORMING_NAME:String = 'login.js';
-		public static var LOGIN_CTOR_NAME:String 	 = 'authenticate';//'testCtor';
+		public static var LOGIN_CTOR_NAME:String 	 = 'authenticate';
 		public static var IDENTITY_COMMAND:String 	 = 'identity';
 		
 		public static const WAITING_FOR_IDENTITY:uint = 0;
@@ -52,6 +52,7 @@ package swarm
 		protected var _loginCtor  	: String;
 		protected var _loginOk  	: Boolean;
 		
+		protected var _outletId 	:String;			
 		protected var _sessionId	:String;			
 		protected var _clientState  :uint;			
 
@@ -59,8 +60,13 @@ package swarm
 		protected var _onErrorHandler 		: Function = null;
 		protected var _pendingCmds			: Array;
 		
-		protected var _socketDown:Boolean;
 		protected var _tenantId:String;
+		
+		protected var _socketNeedConnect:Boolean       = true;
+		protected var _socketPendingConnect:Boolean    = false;
+		protected var _socketConnectionTryCounter:uint = 0;
+		protected var _reconnectionAttempts:uint = 0;
+		protected var _reconnectionAttemptsWindowVisible:Boolean = false;
 		
 		/************************************************************************************************************************************
 		 *  Functions
@@ -92,7 +98,17 @@ package swarm
 			_loginCtor 	= loginCtor;
 			_sessionId  = null;
 			
+			_socketNeedConnect    = true;
+			_socketPendingConnect = false;
+			
 			createSocket();
+		}
+		
+		//___________________________________________________________________________________________________________________________________
+		
+		public function get outletId():String
+		{
+			return _outletId;
 		}
 		
 		//___________________________________________________________________________________________________________________________________
@@ -108,22 +124,111 @@ package swarm
 		{
 			_socket = new Socket();
 			_socket.addEventListener( Event.CONNECT,                     socket_onConnect);
+			_socket.addEventListener( Event.CLOSE,                       socket_onDisconect);
 			_socket.addEventListener( ProgressEvent.SOCKET_DATA,         socket_onStreamData);
 			_socket.addEventListener( IOErrorEvent.IO_ERROR,             socket_onError);
 			_socket.addEventListener( SecurityErrorEvent.SECURITY_ERROR, socket_onSecurityError);
-			_socket.connect(_host,_port);
+			
+			connect();
+		}
+		
+		//___________________________________________________________________________________________________________________________________
+		
+		protected function socket_onDisconect(event:Event):void
+		{
+			if ( _clientState == WAITING_FOR_LOGIN )
+			{
+				dispatchEvent(new Event(Event.CLOSE));			
+			}
+			else
+			{
+				socketWentDown();
+			}
+		}
+		
+		//___________________________________________________________________________________________________________________________________
+		
+		protected function socketWentDown():void
+		{
+			_socketNeedConnect    = true;
+			_socketPendingConnect = false;
+			connect();
+		}
+		
+		//___________________________________________________________________________________________________________________________________
+		
+		protected function isSocketAlive():Boolean
+		{
+			return !_socketNeedConnect;
 		}
 		
 		//___________________________________________________________________________________________________________________________________
 		
 		protected function socket_onConnect(event:Event):void
-		{}	
+		{
+			_socketNeedConnect          = false;
+			_socketPendingConnect       = false;	 
+			_socketConnectionTryCounter = 0;
+			
+			if ( _reconnectionAttempts )
+			{
+				_reconnectionAttempts = 0;
+				Alert.show("Server is up and running !");
+			}
+			
+			dispatchEvent(new Event(Event.CONNECT));
+		}	
+		
+		//___________________________________________________________________________________________________________________________________
+		
+		protected function initSocketClient():void
+		{
+			_loginOk           = false;
+			_sessionId   	   = null;
+			_clientState 	   = WAITING_FOR_IDENTITY;
+			_jsonUtil.callBack = waitingForIdentity;
+		}
+		
+		//___________________________________________________________________________________________________________________________________
+		
+		protected function connect():void
+		{
+			if ( _socketConnectionTryCounter >= 3 )
+			{
+				if ( !_reconnectionAttemptsWindowVisible )
+				{
+					_reconnectionAttempts++;
+					_reconnectionAttemptsWindowVisible = true;
+					Alert.show("Connection to server failed. Trying to connect "+_socketConnectionTryCounter+" times. \n RECONNECT ???","Server is down!",Alert.YES,null,onServerDownAlerHandler);	
+				}
+				return;	
+			}
+			
+			if ( _socketNeedConnect && !_socketPendingConnect )
+			{
+				_socketPendingConnect = true;
+				_socketConnectionTryCounter++;
+				initSocketClient();
+				_socket.connect(_host,_port);
+			}
+		}
+		
+		//___________________________________________________________________________________________________________________________________
+		
+		private function onServerDownAlerHandler(event:Event):void
+		{
+			_reconnectionAttempts = 0;
+			_reconnectionAttemptsWindowVisible = false;
+			_socketNeedConnect = true;
+			_socketPendingConnect = false;
+			connect();
+		}
 		
 		//___________________________________________________________________________________________________________________________________
 		
 		protected function socket_onStreamData(event:ProgressEvent):void
 		{
-			if ( _socketDown )
+			if ( !isSocketAlive() )
 			{
 				Alert.show("Socket is down !","Error");
 				return;
@@ -136,7 +241,7 @@ package swarm
 		
 		protected function socket_onSecurityError(event:SecurityErrorEvent):void
 		{
-			_socketDown = true;
+			socketWentDown();
 			
 			if(_securityErrorHandler != null)
 			{
@@ -152,7 +257,7 @@ package swarm
 		
 		protected function socket_onError(event:IOErrorEvent):void
 		{
-			_socketDown = true;
+			socketWentDown();
 			
 			if(_onErrorHandler != null)
 			{
@@ -181,8 +286,8 @@ package swarm
                         swarmingName     : LOGIN_SWORMING_NAME,
                         command          : 'start',
                         ctor		 	 : _loginCtor,
-                        tenantId         : _tenantId,
-                        commandArguments : [_sessionId, _userId, _authToken]
+                        tenantId         : _tenantId,                        
+						commandArguments : [_sessionId, _userId, _authToken]
                     }
 
 				};
@@ -204,19 +309,21 @@ package swarm
 				
 				if ( _loginOk )
 				{
+					_outletId		   = data.meta.outletId;
                     _sessionId		   = data.meta.sessionId;
 					_clientState 	   = WAITING_FOR_DATA;
 					_jsonUtil.callBack = socket_onDataReady;
 					_loginOk 		   = true;
 					
-					for (i = 0; i < _pendingCmds.length; i++) 
+					for (i = 0; _pendingCmds && i < _pendingCmds.length; i++) 
 					{
 						command = _pendingCmds[i];
 						command.meta.sessionId = _sessionId;
+						command.meta.outletId = _outletId;
 						writeObject(command);
 					}	
 					
-					_pendingCmds = null;
+					_pendingCmds = [];
 				}
 				else
 				{
@@ -249,11 +356,18 @@ package swarm
                         sessionId        : _sessionId,
                         swarmingName     : swarmName,
                         tenantId         : _tenantId,
+						outletId         : _outletId,
                         command          : "start",
                         ctor             : ctroName,
                         commandArguments : args
                     }
 				};
+			
+			if ( !isSocketAlive() )
+			{				
+				connect();
+			}
+			
 			
 			if( _loginOk == true ) 
 			{
@@ -290,7 +404,7 @@ package swarm
 		
 		public function writeObject( value:Object ):void
 		{
-			if ( _socketDown )
+			if ( !isSocketAlive() )
 			{
 				Alert.show("Socket is down !","Error");
 				return;
@@ -300,13 +414,6 @@ package swarm
 			{
 				_jsonUtil.writeObject( _socket, value );
 			}
-		}
-		
-		//___________________________________________________________________________________________________________________________________
-		
-		public function get writeble():Boolean
-		{
-			return !_socketDown;
 		}
 		
 		//___________________________________________________________________________________________________________________________________
