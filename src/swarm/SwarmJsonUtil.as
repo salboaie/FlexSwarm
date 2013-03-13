@@ -15,9 +15,12 @@
 
 package swarm
 {
+	import flash.events.EventDispatcher;
 	import flash.net.Socket;
+	
+	import mx.controls.Alert;
 
-	public class SwarmJsonUtil
+	public class SwarmJsonUtil extends EventDispatcher
 	{
 		/************************************************************************************************************************************
 		 *  Const
@@ -62,6 +65,8 @@ package swarm
 		public function parseStream( data:String ):void
 		{
 			var doAgain:Boolean = true;
+			var jsonString:String;
+			var jsonObject:Object;
 			
 			_buffer += data;
 			
@@ -82,7 +87,19 @@ package swarm
 				{
 					if(_buffer.length >= _nextSize)
 					{
-						_callBack(JSON.parse(_buffer.substr(0,_nextSize)));
+						jsonString = _buffer.substr(0,_nextSize);
+						try
+						{
+							jsonObject = JSON.parse(jsonString);
+						} 
+						catch(error:Error) 
+						{
+							onError( error );
+							_buffer = '';
+							return;
+						}
+						
+						_callBack(jsonObject);
 						_buffer = _buffer.substring(_nextSize+1); 
 						doAgain = true;
 						_state = READ_SIZE;
@@ -122,6 +139,17 @@ package swarm
 			}
 			
 			return "0x"+hex;
+		}
+		
+		//___________________________________________________________________________________________________________________________________
+		
+		protected function onError(error:Error):void
+		{
+			var errorObject:Object = {};
+				errorObject.error = error;
+				errorObject.buffer = _buffer;
+				
+			dispatchEvent( new SwarmEvent(SwarmEvent.ON_ERROR, errorObject));
 		}
 		
 		//___________________________________________________________________________________________________________________________________

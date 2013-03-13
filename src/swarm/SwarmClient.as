@@ -92,6 +92,7 @@ package swarm
 			
 			_callBacks 	= new Dictionary();
 			_jsonUtil  	= new SwarmJsonUtil(waitingForIdentity);
+			_jsonUtil.addEventListener(SwarmEvent.ON_ERROR, jsonUtil_parseErrorHandler);
 			
 			_userId 	= userId;
 			_authToken	= authToken;
@@ -102,6 +103,13 @@ package swarm
 			_socketPendingConnect = false;
 			
 			createSocket();
+		}
+		
+		//___________________________________________________________________________________________________________________________________
+		
+		protected function jsonUtil_parseErrorHandler(event:SwarmEvent):void
+		{
+			dispatchEvent( event );
 		}
 		
 		//___________________________________________________________________________________________________________________________________
@@ -341,7 +349,7 @@ package swarm
                 if( data && data.meta && data.meta.changeSessionId == true) {
                     _sessionId = data.meta.sessionId;
                 }
-				dispatchEvent( new SwarmEvent(data) );			
+				dispatchEvent( new SwarmEvent(SwarmEvent.ON_DATA,data) );			
 				callSwarmingCallBack( data.meta.swarmingName, data );
 			}
 		}

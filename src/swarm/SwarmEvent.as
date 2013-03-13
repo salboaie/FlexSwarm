@@ -22,7 +22,8 @@ package swarm
 		/************************************************************************************************************************************
 		 *  Const
 		 ***********************************************************************************************************************************/
-		public static const ON_DATA:String='onData';
+		public static const ON_DATA:String ='onData';
+		public static const ON_ERROR:String='onError';
 		
 		
 		/************************************************************************************************************************************
@@ -35,7 +36,7 @@ package swarm
 		 *  Functions
 		 ***********************************************************************************************************************************/
 		
-		public function SwarmEvent(swarmingData:Object, bubbles:Boolean=false, cancelable:Boolean=false)
+		public function SwarmEvent(type:String, swarmingData:Object, bubbles:Boolean=false, cancelable:Boolean=false)
 		{
 			super(type, bubbles, cancelable);
 			_swarmingData = swarmingData;			
@@ -66,7 +67,7 @@ package swarm
 
 		override public function clone():Event
 		{
-			return new SwarmEvent(_swarmingData,bubbles,cancelable);
+			return new SwarmEvent(type,_swarmingData,bubbles,cancelable);
 		}
 		
 		//___________________________________________________________________________________________________________________________________
