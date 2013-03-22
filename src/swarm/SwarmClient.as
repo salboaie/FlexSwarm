@@ -38,6 +38,8 @@ package swarm
 		public static const WAITING_FOR_LOGIN:uint 	  = 1;
 		public static const WAITING_FOR_DATA:uint 	  = 2;
 		
+		public static const API_VERSION:String = '1.1';
+		
 		/************************************************************************************************************************************
 		 *  Variables
 		 ***********************************************************************************************************************************/
@@ -54,6 +56,7 @@ package swarm
 		
 		protected var _outletId 	:String;			
 		protected var _sessionId	:String;			
+		protected var _apiVersion 	:String;			
 		protected var _clientState  :uint;			
 
 		protected var _securityErrorHandler	: Function = null;
@@ -184,6 +187,8 @@ package swarm
 				Alert.show("Server is up and running !");
 			}
 			
+			getIdentity();
+			
 			dispatchEvent(new Event(Event.CONNECT));
 		}	
 		
@@ -280,6 +285,25 @@ package swarm
 		
 		//___________________________________________________________________________________________________________________________________
 		
+		protected function getIdentity():void
+		{
+			var cmd:Object =
+				{
+					meta: {
+						swarmingName     : LOGIN_SWORMING_NAME,
+						command          : 'getIdentity',
+						ctor		 	 : _loginCtor,
+						tenantId         : _tenantId,                        
+						commandArguments : [_sessionId, _userId, _authToken]
+					}
+					
+				};
+			
+			writeObject(cmd);
+		}
+		
+		//___________________________________________________________________________________________________________________________________
+		
 		protected function waitingForIdentity( data:Object ):void
 		{
  			if ( _clientState == WAITING_FOR_IDENTITY && data.meta && data.meta.command == IDENTITY_COMMAND )
@@ -287,6 +311,12 @@ package swarm
 				_clientState	   = WAITING_FOR_LOGIN;
 				_jsonUtil.callBack = waitingForLogin;
 				_sessionId		   = data.meta.sessionId;
+				_apiVersion		   = data.meta.apiVersion;
+				
+				if ( API_VERSION != _apiVersion )
+				{
+					Alert.show("Api version don't match !","Api version error");					
+				}
 				
 				var cmd:Object =
                 {
