@@ -38,6 +38,7 @@ package swarm
 		public static const WAITING_FOR_LOGIN:uint 	  = 1;
 		public static const WAITING_FOR_DATA:uint 	  = 2;
 		
+		public static const SOCKET_TIMEOUT:uint = 5000;
 		public static const API_VERSION:String = '1.1';
 		
 		/************************************************************************************************************************************
@@ -131,15 +132,42 @@ package swarm
 		
 		//___________________________________________________________________________________________________________________________________
 		
+		protected function createInstance():Socket
+		{
+			if ( _socket )
+			{
+				_socket.removeEventListener( Event.CONNECT,                     socket_onConnect);
+				_socket.removeEventListener( Event.CLOSE,                       socket_onDisconect);
+				_socket.removeEventListener( ProgressEvent.SOCKET_DATA,         socket_onStreamData);
+				_socket.removeEventListener( IOErrorEvent.IO_ERROR,             socket_onError);
+				_socket.removeEventListener( SecurityErrorEvent.SECURITY_ERROR, socket_onSecurityError);
+				try
+				{
+					_socket.close();
+				} 
+				catch(error:Error) 
+				{}
+				_socket = null;
+			}
+			
+			var result:Socket;
+			
+			result = new Socket();
+			result.timeout = SOCKET_TIMEOUT;			
+			result.addEventListener( Event.CONNECT,                     socket_onConnect);
+			result.addEventListener( Event.CLOSE,                       socket_onDisconect);
+			result.addEventListener( ProgressEvent.SOCKET_DATA,         socket_onStreamData);
+			result.addEventListener( IOErrorEvent.IO_ERROR,             socket_onError);
+			result.addEventListener( SecurityErrorEvent.SECURITY_ERROR, socket_onSecurityError);	
+			
+			return result;
+		}
+		
+		//___________________________________________________________________________________________________________________________________
+		
 		protected function createSocket():void
 		{
-			_socket = new Socket();
-			_socket.addEventListener( Event.CONNECT,                     socket_onConnect);
-			_socket.addEventListener( Event.CLOSE,                       socket_onDisconect);
-			_socket.addEventListener( ProgressEvent.SOCKET_DATA,         socket_onStreamData);
-			_socket.addEventListener( IOErrorEvent.IO_ERROR,             socket_onError);
-			_socket.addEventListener( SecurityErrorEvent.SECURITY_ERROR, socket_onSecurityError);
-			
+			_socket = createInstance();
 			connect();
 		}
 		
@@ -204,7 +232,7 @@ package swarm
 		
 		//___________________________________________________________________________________________________________________________________
 		
-		protected function connect():void
+		protected function connect(force:Boolean=false):void
 		{
 			if ( _socketConnectionTryCounter >= 3 )
 			{
@@ -212,7 +240,7 @@ package swarm
 				{
 					_reconnectionAttempts++;
 					_reconnectionAttemptsWindowVisible = true;
-					Alert.show("Connection to server failed. Trying to connect "+_socketConnectionTryCounter+" times. \n RECONNECT ???","Server is down!",Alert.YES,null,onServerDownAlerHandler);	
+					Alert.show("Server is not responding. Try to reconnect?","Server is not responding..",Alert.YES,null,onServerDownAlerHandler);	
 				}
 				return;	
 			}
@@ -221,6 +249,10 @@ package swarm
 			{
 				_socketPendingConnect = true;
 				_socketConnectionTryCounter++;
+				if ( force )
+				{
+					_socket = createInstance();
+				}
 				initSocketClient();
 				_socket.connect(_host,_port);
 			}
@@ -230,11 +262,12 @@ package swarm
 		
 		private function onServerDownAlerHandler(event:Event):void
 		{
+			_socketConnectionTryCounter = 0;
 			_reconnectionAttempts = 0;
 			_reconnectionAttemptsWindowVisible = false;
 			_socketNeedConnect = true;
 			_socketPendingConnect = false;
-			connect();
+			connect(true);
 		}
 		
 		//___________________________________________________________________________________________________________________________________
